@@ -1,0 +1,4 @@
+videos/
+texts/*
+!texts/
+!texts/171.txt
