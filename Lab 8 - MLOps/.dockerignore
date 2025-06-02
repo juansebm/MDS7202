@@ -1,0 +1,7 @@
+optimize.py
+.mlruns
+.plots
+.venv
+Lab8_enunciado.ipynb
+water_potability.csv
+.DS_Store
