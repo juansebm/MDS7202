@@ -28,6 +28,11 @@ def split_data(**kwargs):
         X, y, test_size=0.2, stratify=y, random_state=42
     )
 
+    print("Distribución en TRAIN:")
+    print(y_train.value_counts(normalize=True))  # proporciones
+    print("Distribución en TEST:")
+    print(y_test.value_counts(normalize=True))
+
     train = pd.concat([X_train, y_train], axis=1)
     test = pd.concat([X_test, y_test], axis=1)
 
@@ -36,46 +41,123 @@ def split_data(**kwargs):
     print("Datos divididos y guardados correctamente")
 
 def preprocess_and_train(**kwargs):
+    import os
+    import pandas as pd
+    import joblib
+    from sklearn.pipeline import Pipeline
+    from sklearn.compose import ColumnTransformer
+    from sklearn.preprocessing import StandardScaler, OneHotEncoder
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import RandomizedSearchCV
+    from sklearn.calibration import CalibratedClassifierCV
+    from sklearn.metrics import accuracy_score, f1_score
+    import numpy as np
+
     execution_date = kwargs['ds']
     base_path = f"data/{execution_date}"
 
+    numeric_features = [
+        "Age", "ExperienceYears", "PreviousCompanies",
+        "DistanceFromCompany", "InterviewScore",
+        "SkillScore", "PersonalityScore"
+    ] # features
+
+    categorical_features = ["Gender", "EducationLevel", "RecruitmentStrategy"] # features
+
+    # train/test splits
     train = pd.read_csv(os.path.join(base_path, "splits", "train.csv"))
-    test = pd.read_csv(os.path.join(base_path, "splits", "test.csv"))
+    test  = pd.read_csv(os.path.join(base_path, "splits", "test.csv"))
 
     X_train = train.drop(columns=["HiringDecision"])
     y_train = train["HiringDecision"]
-    X_test = test.drop(columns=["HiringDecision"])
-    y_test = test["HiringDecision"]
-
-    numeric_features = ["Age", "ExperienceYears", "PreviousCompanies", "DistanceFromCompany",
-                        "InterviewScore", "SkillScore", "PersonalityScore"]
-    categorical_features = ["Gender", "EducationLevel", "RecruitmentStrategy"]
+    X_test  = test.drop(columns=["HiringDecision"])
+    y_test  = test["HiringDecision"]
 
     preprocessor = ColumnTransformer([
         ("num", StandardScaler(), numeric_features),
         ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_features),
     ])
-
-    clf = Pipeline([
+    base_clf = Pipeline([
         ("preprocessor", preprocessor),
-        ("classifier", RandomForestClassifier(random_state=42))
+        ("classifier", RandomForestClassifier(
+            random_state=42,
+            class_weight="balanced"
+        ))
     ])
 
-    clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_test)
+    param_dist = {
+        "classifier__n_estimators": [100, 200, 500],
+        "classifier__max_depth": [None, 5, 10, 20],
+        "classifier__min_samples_leaf": [1, 2, 5],
+        "classifier__max_features": ["sqrt", "log2", 0.5],
+    }
 
+    search = RandomizedSearchCV(
+        base_clf,
+        param_distributions=param_dist,
+        n_iter=10,
+        cv=3,
+        scoring="f1",
+        random_state=42,
+        n_jobs=-1,
+        verbose=1
+    )
+
+    search.fit(X_train, y_train)
+    best_clf = search.best_estimator_
+    print("Mejores parámetros:", search.best_params_)
+
+    calibrated = CalibratedClassifierCV(
+        estimator=best_clf,
+        method="isotonic",
+        cv=3
+    )
+    calibrated.fit(X_train, y_train)
+
+    y_pred = calibrated.predict(X_test)
+    proba  = calibrated.predict_proba(X_test)[:, 1]
     acc = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred, pos_label=1)
+    f1  = f1_score(y_test, y_pred, pos_label=1)
     print(f"Accuracy: {acc:.4f}, F1-score clase positiva: {f1:.4f}")
+    print(f"Probabilidad media clase Contratado en test: {proba.mean():.4f}")
 
-    joblib.dump(clf, os.path.join(base_path, "models", "model.joblib"))
+    try: # Top 10 features
+        importances = best_clf.named_steps['classifier'].feature_importances_
+        feat_names = (
+            numeric_features +
+            list(best_clf.named_steps['preprocessor']
+                 .named_transformers_['cat']
+                 .get_feature_names_out(categorical_features))
+        )
+        top_idx = np.argsort(importances)[::-1][:10]
+        print("Top 10 features:")
+        for i in top_idx:
+            print(f"  {feat_names[i]}: {importances[i]:.3f}")
+    except Exception:
+        pass
+
+    # 8) Save the calibrated model
+    model_dir = os.path.join(base_path, "models")
+    os.makedirs(model_dir, exist_ok=True)
+    joblib.dump(calibrated, os.path.join(model_dir, "model.joblib"))
+    print("Modelo entrenado y guardado en:", os.path.join(model_dir, "model.joblib"))
 
 def predict(file, model_path):
+    import joblib
+    import pandas as pd
+
     pipeline = joblib.load(model_path)
-    input_data = pd.read_json(file)
-    predictions = pipeline.predict(input_data)
-    labels = ["No contratado" if pred == 0 else "Contratado" for pred in predictions]
-    return {"Predicción": labels[0]}
+
+    path = getattr(file, "name", file)
+    df = pd.read_json(path)
+    proba = pipeline.predict_proba(df)[0, 1] # Calcula la probabilidad de la clase “Contratado”
+    threshold = 0.4
+    pred = 1 if proba >= threshold else 0 # Decide en base al threshold
+
+    labels = ["No contratado", "Contratado"]
+    return {
+        "Predicción": labels[pred],
+    }
 
 def gradio_interface():
     import gradio as gr

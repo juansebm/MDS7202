@@ -32,9 +32,12 @@ with DAG(
     descargar_datos = BashOperator(
         task_id="download_data",
         bash_command=(
-            "curl -o data/{{ ds }}/raw/data_1.csv "
+            "mkdir -p $AIRFLOW_HOME/data/{{ ds }}/raw && "
+            "curl -sSf -o $AIRFLOW_HOME/data/{{ ds }}/raw/data_1.csv "
             "https://gitlab.com/eduardomoyab/laboratorio-13/-/raw/main/files/data_1.csv"
         ),
+        env={"AIRFLOW_HOME": "/opt/airflow"},
+        dag=dag,
     )
 
     split = PythonOperator(
