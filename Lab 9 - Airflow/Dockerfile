@@ -1,19 +1,19 @@
-FROM python:3.9-slim
+FROM python:3.10-slim
 
-WORKDIR /opt/airflow
+ENV AIRFLOW_HOME=/opt/airflow
+WORKDIR $AIRFLOW_HOME
 
 RUN apt-get update && apt-get install -y \
-    libgomp1 \
     curl \
+    libgomp1 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY ./dags /opt/airflow/dags
-COPY ./logs /opt/airflow/logs
-COPY ./plugins /opt/airflow/plugins
+COPY ./dags $AIRFLOW_HOME/dags
+COPY ./plugins $AIRFLOW_HOME/plugins
 
 EXPOSE 8080
 
