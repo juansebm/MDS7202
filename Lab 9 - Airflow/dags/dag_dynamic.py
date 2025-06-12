@@ -1,21 +1,26 @@
 from airflow import DAG
 from airflow.operators.python_operator import BranchPythonOperator
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
+from lightgbm import LGBMClassifier
+
+from airflow.utils.trigger_rule import TriggerRule
 
 
 from airflow.operators.python import PythonOperator
 from airflow.operators.bash import BashOperator
 from airflow.operators.empty import EmptyOperator
 from datetime import datetime
-from hiring_functions import (
+from hiring_dynamic_functions import (
     create_folders,
     split_data,
-    preprocess_and_train,
-    gradio_interface,
+    train_model,
+    load_and_merge,
+    evaluate_models
 )
 
 default_args = {"owner": "airflow"}
 
-#esta función es nueva
 def decide_branch(ds, **kwargs):
     """Esta función decide qué datos descargar según la fecha de ejecución, si
     antes o después del primero de Noviembre de 2024"""
@@ -38,7 +43,7 @@ with DAG(
     default_args=default_args,
     start_date=datetime(2024, 10, 1),
     schedule_interval="0 15 5 * *",#cambiamos None por las 15 UTC, osea 0 15 5 * * 
-    catchup=True,#aqui activamos backfilling para fechas anteriores. 
+    catchup=True,#aqui activamos backfilling para ejecutar tareas programadas desde fechas pasadas
     description="DAG para predicción dinámica de contrataciones",
 ) as dag:
 
@@ -49,7 +54,7 @@ with DAG(
     #punto 3; creamos carpetas para la ejecución actual
     crear_carpetas = PythonOperator(
         task_id="create_folders",
-        python_callable=create_folders,
+        python_callable=create_folders,#esta es una función importada de hiring_dynamic_functions.py
         op_kwargs={"ds": "{{ ds }}"},
     )
 
@@ -90,11 +95,11 @@ with DAG(
     #cute si encuentra disponible como mínimo uno de los archivos.
     load_merge = PythonOperator(
         task_id="load_and_merge",
-        python_callable=load_and_merge,
+        python_callable=load_and_merge,#usamos la función de hiring_dynamic_functions.py
         op_kwargs={"ds": "{{ ds }}"},
         
         # Ejecutamos este operador si al menos uno de
-        #los archivos existe (usar TriggerRule)
+        #los archivos existe (usamos TriggerRule como ONE_SUCCESS)
         trigger_rule=TriggerRule.ONE_SUCCESS,
     )
 
@@ -102,42 +107,47 @@ with DAG(
     #en entrenamiento y prueba usando la función split_data()
     split = PythonOperator(
         task_id="split_data",
-        python_callable=split_data,
+        python_callable=split_data,#usamos la función de hiring_dynamic_functions.py
         op_kwargs={"ds": "{{ ds }}"},
     )
-
-    #Esta línea la modificaremos por entrenamientos paralelos:
-    #entrenar = PythonOperator(
-    #    task_id="preprocess_and_train",
-    #    python_callable=preprocess_and_train,
-    #    op_kwargs={"ds": "{{ ds }}"},
-    #)
 
     
     #punto 7; Entrenamientos paralelos; realizamos 3 entrenamientos
     #paralelos de 3 modelos diferentes, donde nos aseguramos de guardar
     #los modelos entrenados con nombres distintivos, usando la función
     #train_model().
-    # Modelo 1 (Random Forest)
+
     train_rf = PythonOperator(
         task_id="train_rf",
         python_callable=train_model,
-        op_kwargs={"ds": "{{ ds }}", "model_name": "rf"},
+        op_kwargs={
+            "ds": "{{ ds }}",
+            "model": RandomForestClassifier(),
+            "model_name": "rf"
+        },
     )
 
-    # Modelo 2 (XGBoost)
     train_xgb = PythonOperator(
         task_id="train_xgb",
         python_callable=train_model,
-        op_kwargs={"ds": "{{ ds }}", "model_name": "xgb"},
+        op_kwargs={
+            "ds": "{{ ds }}",
+            "model": XGBClassifier(use_label_encoder=False, eval_metric="logloss"),
+            "model_name": "xgb"
+        },
     )
 
-    # Modelo 3 (Regresión Logística)
-    train_logreg = PythonOperator(
-        task_id="train_logreg",
+    train_lgbm = PythonOperator(
+        task_id="train_lgbm",
         python_callable=train_model,
-        op_kwargs={"ds": "{{ ds }}", "model_name": "logreg"},
+        op_kwargs={
+            "ds": "{{ ds }}",
+            "model": LGBMClassifier(),
+            "model_name": "lgbm"
+        },
     )
+
+
 
     #punto 8;
     # Evaluación de modelos: registramos el accuracy de cada modelo en el set
@@ -154,4 +164,5 @@ with DAG(
     start >> crear_carpetas >> branching
     branching >> [download_data_1, download_data_2] >> load_merge
     load_merge >> split
-    split >> [train_rf, train_xgb, train_logreg] >> evaluate
+    split >> [train_rf, train_xgb, train_lgbm] >> evaluate
+

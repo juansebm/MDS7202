@@ -9,7 +9,6 @@ from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.metrics import accuracy_score
 from datetime import datetime
 
-
 def create_folders(**kwargs):
     """Esta función tiene como finalidad crear las carpetas raw, preprocessed,
     splits y models.
@@ -55,7 +54,6 @@ def load_and_merge(**kwargs):
             print(f"Archivo leído: {file}")
         else:
             print(f"Archivo no encontrado (omitido): {file}")
-
     if not dfs:
         raise FileNotFoundError("No se encontraron archivos CSV para procesar.")
 
@@ -104,7 +102,7 @@ def split_data(**kwargs):
     print(f"Datos divididos y guardados en: {output_path}")
 
 
-def train_model(model, **kwargs):
+def train_model(model, model_name, **kwargs):
     """Esta función hace cuatro cosas: 1) comienza leyendo el conjunto de training
     desde la carpeta splits, 2) crea y aplica un pipeline con una etapa de preproce-
     samiento utilizando columntransformer para las transformaciones, 3) añade una etapa
@@ -147,8 +145,8 @@ def train_model(model, **kwargs):
     #etapa 3: entrenamiento
     pipeline.fit(X_train, y_train)
 
-    #etapa 4: se crea un archivo joblib.
-    model_filename = f"{model.__class__.__name__}_{datetime.now().strftime('%H%M%S')}.joblib"
+    #etapa 4: se crea un archivo joblib, con el nombre del modelo y fecha.
+    model_filename = f"{model_name}_{datetime.now().strftime('%H%M%S')}.joblib"
     full_model_path = os.path.join(model_path, model_filename)
     joblib.dump(pipeline, full_model_path)
     print(f"Modelo entrenado y guardado en: {full_model_path}")
@@ -157,7 +155,7 @@ def train_model(model, **kwargs):
 def evaluate_models(**kwargs):
     """Función que recibe los modelos entrenados desde la carpeta models, evalúa
     su desempeño mediante accuracy en el test set y selecciona el mejor modelo obtenido.
-    Además, guarda el mejor modelo como un archivo .joblib. Su función debe imprimir el
+    Además, guarda el mejor modelo como un archivo .joblib. Por último, imprime el
     nombre del modelo seleccionado y el accuracy obtenido.
     
         Input:
@@ -178,6 +176,8 @@ def evaluate_models(**kwargs):
     best_model_name = None
     best_model = None
 
+    #para cada uno de los modelos vamos viendo cual es el mejor
+    #según la métrica accuracy (porque son modelos de clasificación)
     for model_file in os.listdir(models_dir):
         if model_file.endswith(".joblib"):
             model_path = os.path.join(models_dir, model_file)
@@ -185,7 +185,7 @@ def evaluate_models(**kwargs):
             y_pred = model.predict(X_test)
             acc = accuracy_score(y_test, y_pred)
 
-            print(f"Modelo {model_file} → Accuracy: {acc:.4f}")
+            print(f"Modelo {model_file} con una Accuracy: {acc:.4f}")
 
             #vamos actualizando el modelo, el nombre y la métrica accuracy
             if acc > best_accuracy:
@@ -200,4 +200,4 @@ def evaluate_models(**kwargs):
         print(f"Mejor modelo: {best_model_name} con Accuracy: {best_accuracy:.4f}")
         print(f"Guardado como: {final_model_path}")
     else:
-        print("No se encontraron modelos para evaluar.")
+                print("No se encontraron modelos para evaluar.")
