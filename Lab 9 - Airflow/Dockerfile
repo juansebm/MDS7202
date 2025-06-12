@@ -1,7 +1,11 @@
 FROM python:3.10-slim
 
 ENV AIRFLOW_HOME=/opt/airflow
+ENV AIRFLOW__CORE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
 WORKDIR $AIRFLOW_HOME
+
+RUN mkdir -p logs dags plugins \
+    && touch $AIRFLOW_HOME/airflow.db
 
 RUN apt-get update && apt-get install -y \
     curl \

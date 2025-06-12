@@ -17,6 +17,5 @@ services:
       - ./logs:/opt/airflow/logs
       - ./plugins:/opt/airflow/plugins
       - ./data:/opt/airflow/data # esto para evitar error en split_data desde el BashOperator
-      - ./airflow.db:/opt/airflow/airflow.db 
     ports:
       - "8080:8080"
