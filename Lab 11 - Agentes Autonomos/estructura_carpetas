@@ -1,0 +1,24 @@
+// Estructura de Carpetas
+digraph {
+	A [label="Proyecto/"]
+	B [label="README.md
+(configuración, instalación, uso)"]
+	C [label="data/
+(datos)"]
+	D [label="scripts/"]
+	E [label="preprocess.py
+(preprocesar datos)"]
+	F [label="main.py
+(script principal)"]
+	G [label="models/
+(modelos guardados)"]
+	H [label="requirements.txt
+(dependencias)"]
+	A -> B
+	A -> C
+	A -> D
+	D -> E
+	D -> F
+	A -> G
+	A -> H
+}
